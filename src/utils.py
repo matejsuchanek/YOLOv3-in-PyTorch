@@ -37,9 +37,8 @@ def load_classes(path):
     """
     Loads class labels at 'path'
     """
-    fp = open(path, "r")
-    names = fp.read().split("\n")[:-1]
-    return names
+    with open(path, "r") as fp:
+        return fp.read().split("\n")[:-1]
 
 
 def init_conv_layer_randomly(m):
@@ -115,7 +114,7 @@ def xywh_to_cxcywh(bbox):
     return bbox
 
 
-def draw_result(img, boxes, show=False, class_names = None):
+def draw_result(img, boxes, show=False, class_names=None):
     if isinstance(img, torch.Tensor):
         transform = ToPILImage()
         img = transform(img)

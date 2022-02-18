@@ -77,7 +77,7 @@ def parse_args():
     parser.add_argument('--from-ckpt', dest='from_ckpt', action='store_true',
                         help="Load weights from checkpoint file, where optimizer state is included.")
 
-    #training only:
+    # training only:
     parser.add_argument('--reset-weights', dest='reset_weights', action='store_true',
                         help="TRAINING ONLY: Reset the weights which are not fixed during training.")
     parser.add_argument('--last-n-layers', dest='n_last_layers', type=str, default='1',
@@ -117,7 +117,7 @@ def parse_args():
 
     # inference parameters:
     parser.add_argument('--class-path', dest='class_path', type=str, default='../data/coco.names',
-                        help="TINFERENCE ONLY: he path to the file storing class label names.")
+                        help="INFERENCE ONLY: the path to the file storing class label names.")
     parser.add_argument('--conf-thres', dest='conf_thres', type=float, default=0.8,
                         help="INFERENCE ONLY: object detection confidence threshold during inference.")
     parser.add_argument('--nms-thres', dest='nms_thres', type=float, default=0.4,
@@ -147,7 +147,7 @@ def config_device(cpu_only: bool):
 
 
 def load_yolov3_model(weight_path, device, ckpt=False, mode='eval'):
-    _model = YoloNetV3(nms=True)
+    _model = YoloNetV3()
     if not ckpt:
         _model.load_state_dict(torch.load(weight_path))
     else:
@@ -187,7 +187,6 @@ def make_output_dir(out_dir):
         logging.warning(
             'The output folder {} exists. New output may overwrite the old output.'.format(out_dir))
     os.makedirs(out_dir, exist_ok=True)
-    return
 
 
 def run_detection(model, dataloader, device, conf_thres, nms_thres):
@@ -217,9 +216,7 @@ def run_detection(model, dataloader, device, conf_thres, nms_thres):
         end_time = time.time()
         inference_time_both = end_time - start_time
         # print("Total PP time: {:.1f}".format(inference_time_pp*1000))
-        logging.info('Batch {}, '
-                     'Total time: {}s, '.format(batch_i,
-                                                inference_time_both))
+        logging.debug('Batch {}, Total time: {}s'.format(batch_i, inference_time_both))
         _detection_time_list.append(inference_time_both)
         # _total_time += inference_time_both
 
@@ -228,8 +225,8 @@ def run_detection(model, dataloader, device, conf_thres, nms_thres):
     _detection_time_tensor = torch.tensor(_detection_time_list)
     avg_time = torch.mean(_detection_time_tensor)
     time_std_dev = torch.std(_detection_time_tensor)
-    logging.info('Average inference time (total) is {}s.'.format(float(avg_time)))
-    logging.info('Std dev of inference time (total) is {}s.'.format(float(time_std_dev)))
+    logging.info(f'Average inference time (total) is {avg_time:.4f}s.')
+    logging.info(f'Std dev of inference time (total) is {time_std_dev:.4f}s.')
     return results
 
 
@@ -253,11 +250,11 @@ def run_training(model, optimizer, dataloader, device, img_size, n_epoch, every_
                 optimizer.step()
 
             logging.info(
-                "[Epoch {}/{}, Batch {}/{}] [Losses: total {}, coord {}, obj {}, noobj {}, class {}]"
+                "[Epoch {}/{}, Batch {}/{}] [Losses: total {:.3f}, coord {:.3f}, obj {:.3f}, noobj {:.3f}, class {:.3f}]"
                 .format(
-                    epoch_i,
+                    epoch_i+1,
                     n_epoch,
-                    batch_i,
+                    batch_i+1,
                     len(dataloader),
                     losses[0].item(),
                     losses[1].item(),
@@ -281,14 +278,12 @@ def run_training(model, optimizer, dataloader, device, img_size, n_epoch, every_
             # )
 
             if every_n_batch != 0 and (batch_i + 1) % every_n_batch == 0:
-                save_path = "{}/ckpt_epoch_{}_batch_{}.pt".format(ckpt_dir, epoch_i, batch_i)
-                save_checkpoint_weight_file(model, optimizer, epoch_i, batch_i, losses, save_path)
+                save_path = f"{ckpt_dir}/ckpt_epoch_{epoch_i + 1}_batch_{batch_i + 1}.pt"
+                save_checkpoint_weight_file(model, optimizer, epoch_i + 1, batch_i + 1, losses, save_path)
 
         if (epoch_i + 1) % every_n_epoch == 0:
-            save_path = "{}/ckpt_epoch_{}.pt".format(ckpt_dir, epoch_i)
-            save_checkpoint_weight_file(model, optimizer, epoch_i, 0, losses, save_path)
-
-    return
+            save_path = f"{ckpt_dir}/ckpt_epoch_{epoch_i + 1}.pt"
+            save_checkpoint_weight_file(model, optimizer, epoch_i + 1, 0, losses, save_path)
 
 
 def save_results_as_json(results, json_path):
@@ -310,7 +305,6 @@ def save_results_as_json(results, json_path):
             results_json.append(result)
     with open(json_path, 'w') as f:
         json.dump(results_json, f)
-    return
 
 
 def save_det_image(img_path, detections, output_img_path, class_names):
@@ -319,7 +313,6 @@ def save_det_image(img_path, detections, output_img_path, class_names):
     if detections is not None:
         img = draw_result(img, detections, class_names=class_names)
     img.save(output_img_path)
-    return
 
 
 def save_results_as_images(results, output_dir, class_names):
@@ -331,7 +324,6 @@ def save_results_as_images(results, output_dir, class_names):
         # Create plot
         img_output_filename = '{}/{}.png'.format(output_dir, img_i)
         save_det_image(path, detections, img_output_filename, class_names)
-    return
 
 
 def save_checkpoint_weight_file(model, optimizer, epoch, batch, loss, weight_file_path):
@@ -343,7 +335,6 @@ def save_checkpoint_weight_file(model, optimizer, epoch, batch, loss, weight_fil
         'loss': loss
     }, weight_file_path)
     logging.info("saving model at epoch {}, batch {} to {}".format(epoch, batch, weight_file_path))
-    return
 
 
 def run_yolo_inference(opt):
@@ -383,7 +374,6 @@ def run_yolo_inference(opt):
         img_path = '{}/{}/img'.format(opt.out_dir, current_datetime_str)
         make_output_dir(img_path)
         save_results_as_images(results, img_path, class_names)
-    return
 
 
 def run_yolo_training(opt):
@@ -432,7 +422,6 @@ def run_yolo_training(opt):
                  opt.save_every_batch,
                  opt.save_every_epoch,
                  ckpt_dir)
-    return
 
 
 if __name__ == '__main__':
@@ -443,6 +432,4 @@ if __name__ == '__main__':
         run_yolo_inference(options)
     else:
         raise ValueError("Only action of 'train' or 'test' supported.")
-
-
 

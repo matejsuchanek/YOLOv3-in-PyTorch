@@ -241,12 +241,10 @@ class YoloNetTail(nn.Module):
 
 class YoloNetV3(nn.Module):
 
-    def __init__(self, nms=False, post=True):
+    def __init__(self):
         super(YoloNetV3, self).__init__()
         self.darknet = DarkNet53BackBone()
         self.yolo_tail = YoloNetTail()
-        self.nms = nms
-        self._post_process = post
 
     def forward(self, x):
         tmp1, tmp2, tmp3 = self.darknet(x)
@@ -293,4 +291,5 @@ class YoloNetV3(nn.Module):
         elif n == 'tail':
             return self.yolo_tail_layers()
         else:
-            raise ValueError("n>3 not defined")
+            raise ValueError(f"{n=} not defined")
+

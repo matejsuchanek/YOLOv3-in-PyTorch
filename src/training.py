@@ -50,8 +50,7 @@ def yolo_loss_fn(preds: Tensor, tgt: Tensor, tgt_len: Tensor, img_size: int, ave
         average: (bool) the flag of whether the loss is summed loss or average loss over the batch size.
     Return:
         the total loss
-        """
-
+    """
     # generate the no-objectness mask. mask_noobj has size of [B, N_PRED]
     mask_noobj = noobj_mask_fn(preds, tgt)
     tgt_t_1d, idx_pred_obj = pre_process_targets(tgt, tgt_len, img_size)
@@ -180,7 +179,7 @@ def pre_process_targets(tgt: Tensor, tgt_len, img_size):
     tgt_t[..., 2] = t_w
     tgt_t[..., 3] = t_h
 
-    # aggregate processed targets and the corresponding prediction index from different batches in to one dimension
+    # aggregate processed targets and the corresponding prediction index from different batches to one dimension
     n_batch = tgt.size(0)
     n_pred = sum([(img_size // s) ** 2 for s in strides_selection]) * 3
 
@@ -256,3 +255,4 @@ def iou_batch(bboxes1: Tensor, bboxes2: Tensor, center=False, zero_center=False)
     iou_ = area_intersect / (area1.unsqueeze(2) + area2.unsqueeze(1) - area_intersect + EPSILON)
 
     return iou_
+
