@@ -35,10 +35,11 @@ NUM_CLASSES_COCO = 80
 # In the coco dataset, there are in total 80 classes.
 # number of attributes are therefore 85, including four for bounding boxes and one for confidence.
 SCALES = 3
-NUM_ANCHORS_PER_SCALE = 3
-ANCHORS = [(10, 13), (16, 30), (33, 23), (30, 61), (62, 45), (59, 119), (116, 90), (156, 198), (373, 326)]
-assert len(ANCHORS) == SCALES * NUM_ANCHORS_PER_SCALE
-NUM_CLASSES = NUM_CLASSES_COCO
+
+NUM_ANCHORS_PER_SCALE = 1
+#NUM_CLASSES = NUM_CLASSES_COCO
+
+NUM_CLASSES = 3
 NUM_ATTRIB = 4 + 1 + NUM_CLASSES
 LAST_LAYER_DIM = NUM_ANCHORS_PER_SCALE * NUM_ATTRIB
 
@@ -59,5 +60,4 @@ COORD_COEFF = 5
 
 # EPSILON is used to avoid computation instability like NaN or Inf.
 EPSILON = 1e-9
-
 

@@ -29,7 +29,8 @@ from typing import Tuple
 import torch
 import torch.nn.functional as F
 
-from config import NOOBJ_COEFF, COORD_COEFF, IGNORE_THRESH, ANCHORS, NUM_ANCHORS_PER_SCALE, EPSILON
+from anchors import ANCHORS
+from config import NOOBJ_COEFF, COORD_COEFF, IGNORE_THRESH, NUM_ANCHORS_PER_SCALE, EPSILON
 
 Tensor = torch.Tensor
 
@@ -139,16 +140,44 @@ def pre_process_targets(tgt: Tensor, tgt_len: Tensor, img_size):
                             therefore when the predictions are flattened, the indices can directly find the prediction.
     """
     # find the anchor box which has max IOU (zero centered) with the targets
-    wh_anchor = torch.tensor(ANCHORS).to(tgt.device).float()
-    n_anchor = wh_anchor.size(0)
-    xy_anchor = torch.zeros((n_anchor, 2), device=tgt.device)
-    bbox_anchor = torch.cat((xy_anchor, wh_anchor), dim=1)
-    bbox_anchor.unsqueeze_(0)
+    n_batch, n_tgt, _ = tgt.size()
+    strides_selection = [8, 16, 32]
+
+    stridesT = torch.tensor(strides_selection, dtype=float, device=tgt.device)
+    offsets = tgt[..., (0, 1)].view(1, -1, 2) / stridesT.view(-1, 1, 1)
+    offsets = offsets.long()  # round down
+    # offsets.shape = [3, n_batch * n_tgt, 2]
+
+    tensors = []
+    for i in range(3):
+        anchors = torch.tensor(ANCHORS[i], device=tgt.device)
+        anchors = anchors[offsets[i, :, 1], offsets[i, :, 0]].view(n_batch, -1, 2)
+        tensors.append(anchors)
+
+    wh_anchor = torch.cat(tensors, 1)
+    # wh_anchor.shape = [n_batch, 3*n_tgt, 2]
+    xy_anchor = torch.zeros(wh_anchor.size(), device=tgt.device)
+    bbox_anchor = torch.cat((xy_anchor, wh_anchor), 2)
+    # bbox_anchor.shape = [n_batch, 3*n_tgt, 4]
+
     iou_anchor_tgt = iou_batch(bbox_anchor, tgt[..., :4], zero_center=True)
-    _, idx_anchor = torch.max(iou_anchor_tgt, dim=1)
+    # iou_anchor_tgt.shape = [n_batch, 3*n_tgt, n_tgt]
+    iou_anchor_tgt = iou_anchor_tgt.view(n_batch, 3, n_tgt, n_tgt)
+    # iou_anchor_tgt.shape = [n_batch, 3, n_tgt, n_tgt]
+    select = torch.arange(n_tgt, device=tgt.device)
+    iou_anchor_tgt = iou_anchor_tgt[..., select, select]  # torch.diagonal?
+    # iou_anchor_tgt.shape = [n_batch, 3, n_tgt]
+    _, idx_anchor = torch.max(iou_anchor_tgt, dim=1)  # FIXME: crashes when no positive sample
+    # idx_anchor.shape = [n_batch, n_tgt]
+
+    idx_batch = torch.arange(n_batch, device=tgt.device).repeat_interleave(n_tgt)
+    idx_tgt = torch.arange(n_tgt, device=tgt.device).repeat(1, n_batch).view(-1)
+    wh_anchor = wh_anchor.view(n_batch, 3, n_tgt, 2)
+    wh_anchor = wh_anchor[idx_batch, idx_anchor.view(-1), idx_tgt, :].view(n_batch, n_tgt, 2)
+    w_anchor = wh_anchor[..., 0]
+    h_anchor = wh_anchor[..., 1]
 
     # find the corresponding prediction's index for the anchor box with the max IOU
-    strides_selection = [8, 16, 32]
     scale = idx_anchor // NUM_ANCHORS_PER_SCALE
     idx_anchor_by_scale = idx_anchor - scale * NUM_ANCHORS_PER_SCALE
     stride = 8 * 2 ** scale
@@ -169,10 +198,6 @@ def pre_process_targets(tgt: Tensor, tgt_len: Tensor, img_size):
     t_y = torch.log(t_y / (1. - t_y))  # inverse of sigmoid
 
     # calculate t_w and t_h
-    w_anchor = wh_anchor[..., 0]
-    h_anchor = wh_anchor[..., 1]
-    w_anchor = torch.index_select(w_anchor, 0, idx_anchor.view(-1)).view(idx_anchor.size())
-    h_anchor = torch.index_select(h_anchor, 0, idx_anchor.view(-1)).view(idx_anchor.size())
     t_w = torch.log((tgt[..., 2] / w_anchor).clamp(min=EPSILON))
     t_h = torch.log((tgt[..., 3] / h_anchor).clamp(min=EPSILON))
 

@@ -31,7 +31,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from config import ANCHORS, NUM_ANCHORS_PER_SCALE, NUM_CLASSES, NUM_ATTRIB, LAST_LAYER_DIM
+from anchors import ANCHORS
+from config import NUM_ANCHORS_PER_SCALE, NUM_CLASSES, NUM_ATTRIB, LAST_LAYER_DIM
 
 Tensor = torch.Tensor
 
@@ -101,15 +102,15 @@ class YoloLayer(nn.Module):
     def __init__(self, scale, stride):
         super(YoloLayer, self).__init__()
         if scale == 's':
-            idx = np.arange(NUM_ANCHORS_PER_SCALE)
+            idx = 0
         elif scale == 'm':
-            idx = NUM_ANCHORS_PER_SCALE + np.arange(NUM_ANCHORS_PER_SCALE)
+            idx = 1
         elif scale == 'l':
-            idx = 2*NUM_ANCHORS_PER_SCALE + np.arange(NUM_ANCHORS_PER_SCALE)
+            idx = 2
         else:
             idx = None
         assert idx is not None
-        self.anchors = torch.tensor([ANCHORS[i] for i in idx], dtype=float)
+        self.anchors = torch.tensor(ANCHORS[idx], dtype=float)
         self.stride = stride
 
     def forward(self, x):
@@ -130,8 +131,8 @@ class YoloLayer(nn.Module):
         grid_y = grid_tensor.t().view(1, 1, num_grid, num_grid)
 
         anchors = self.anchors.to(x.device)
-        anchor_w = anchors[..., 0].view(1, -1, 1, 1)
-        anchor_h = anchors[..., 1].view(1, -1, 1, 1)
+        anchor_w = anchors[..., 0].view(1, -1, num_grid, num_grid)
+        anchor_h = anchors[..., 1].view(1, -1, num_grid, num_grid)
 
         # Get outputs
         x_center_pred = (torch.sigmoid(prediction_raw[..., 0]) + grid_x) * self.stride  # Center x
