@@ -148,10 +148,11 @@ def config_device(cpu_only: bool):
 
 def load_yolov3_model(weight_path, device, ckpt=False, mode='eval'):
     _model = YoloNetV3()
+    data = torch.load(weight_path, map_location=device)
     if not ckpt:
-        _model.load_state_dict(torch.load(weight_path))
+        _model.load_state_dict(data, strict=False)
     else:
-        _model.load_state_dict(torch.load(weight_path)['model_state_dict'])
+        _model.load_state_dict(data['model_state_dict'])
     _model.to(device)
     if mode == 'eval':
         _model.eval()
