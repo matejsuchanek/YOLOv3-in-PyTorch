@@ -26,6 +26,7 @@
 
 import logging
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -100,14 +101,15 @@ class YoloLayer(nn.Module):
     def __init__(self, scale, stride):
         super(YoloLayer, self).__init__()
         if scale == 's':
-            idx = (0, 1, 2)
+            idx = np.arange(NUM_ANCHORS_PER_SCALE)
         elif scale == 'm':
-            idx = (3, 4, 5)
+            idx = NUM_ANCHORS_PER_SCALE + np.arange(NUM_ANCHORS_PER_SCALE)
         elif scale == 'l':
-            idx = (6, 7, 8)
+            idx = 2*NUM_ANCHORS_PER_SCALE + np.arange(NUM_ANCHORS_PER_SCALE)
         else:
             idx = None
-        self.anchors = torch.tensor([ANCHORS[i] for i in idx])
+        assert idx is not None
+        self.anchors = torch.tensor([ANCHORS[i] for i in idx], dtype=float)
         self.stride = stride
 
     def forward(self, x):

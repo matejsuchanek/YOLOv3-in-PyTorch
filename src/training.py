@@ -27,7 +27,7 @@
 import torch
 import torch.nn.functional as F
 
-from config import NOOBJ_COEFF, COORD_COEFF, IGNORE_THRESH, ANCHORS, EPSILON
+from config import NOOBJ_COEFF, COORD_COEFF, IGNORE_THRESH, ANCHORS, NUM_ANCHORS_PER_SCALE, EPSILON
 
 Tensor = torch.Tensor
 
@@ -37,7 +37,7 @@ def yolo_loss_fn(preds: Tensor, tgt: Tensor, tgt_len: Tensor, img_size: int, ave
     Args:
         preds: (Tensor) the raw prediction tensor. Size is [B, N_PRED, NUM_ATTRIB],
                 where B is the batch size;
-                N_PRED is the total number of predictions, equivalent to 3*N_GRID*N_GRID for each scale;
+                N_PRED is the total number of predictions, equivalent to N_GRID*N_GRID for each scale;
                 NUM_ATTRIB is the number of attributes, determined in config.py.
                 coordinates is in format cxcywh and is local (raw).
                 objectness is in logit.
@@ -91,17 +91,18 @@ def yolo_loss_fn(preds: Tensor, tgt: Tensor, tgt_len: Tensor, img_size: int, ave
 
 def noobj_mask_fn(pred: Tensor, target: Tensor):
     """pred is a 3D tensor with shape
-    (num_batch, NUM_ANCHORS_PER_SCALE*num_grid*num_grid, NUM_ATTRIB). The raw data has been converted.
+    (num_batch, NUM_ANCHORS_PER_SCALE*num_grid*num_grid, NUM_ATTRIBS). The raw data has been converted.
     target is a 3D tensor with shape
-    (num_batch, max_num_object, NUM_ATTRIB).
+    (num_batch, max_num_object, NUM_ATTRIBS).
      The max_num_objects depend on the sample which has max num_objects in this minibatch"""
-    num_batch, num_pred, num_attrib = pred.size()
-    assert num_batch == target.size(0)
-    ious = iou_batch(pred[..., :4], target[..., :4], center=True) #in cxcywh format
-    # for each pred bbox, find the target box which overlaps with it (without zero centered) most, and the iou value.
-    max_ious, max_ious_idx = torch.max(ious, dim=2)
-    noobj_indicator = torch.where((max_ious - IGNORE_THRESH) > 0, torch.zeros_like(max_ious), torch.ones_like(max_ious))
-    return noobj_indicator
+    assert pred.size(0) == target.size(0)
+    assert pred.size(-1) == 4
+
+    ious = iou_batch(pred, target[..., :4], center=True)  # in cxcywh format
+    # for each pred, find the target box which overlaps with it (without zero centered) most, and the iou value.
+    max_ious, _ = torch.max(ious, dim=2)
+    noobj_indicator = max_ious < IGNORE_THRESH
+    return noobj_indicator.to(dtype=torch.float32, device=pred.device)
 
 
 def noobj_mask_filter(mask_noobj: Tensor, idx_obj_1d: Tensor):
@@ -113,7 +114,7 @@ def noobj_mask_filter(mask_noobj: Tensor, idx_obj_1d: Tensor):
     return mask_noobj
 
 
-def pre_process_targets(tgt: Tensor, tgt_len, img_size):
+def pre_process_targets(tgt: Tensor, tgt_len: Tensor, img_size):
     """get the index of the predictions corresponding to the targets;
     and put targets from different sample into one dimension (flatten), getting rid of the tails;
     and convert coordinates to local.
@@ -144,8 +145,8 @@ def pre_process_targets(tgt: Tensor, tgt_len, img_size):
 
     # find the corresponding prediction's index for the anchor box with the max IOU
     strides_selection = [8, 16, 32]
-    scale = idx_anchor // 3
-    idx_anchor_by_scale = idx_anchor - scale * 3
+    scale = idx_anchor // NUM_ANCHORS_PER_SCALE
+    idx_anchor_by_scale = idx_anchor - scale * NUM_ANCHORS_PER_SCALE
     stride = 8 * 2 ** scale
     grid_x = (tgt[..., 0] // stride.float()).long()
     grid_y = (tgt[..., 1] // stride.float()).long()
@@ -153,15 +154,15 @@ def pre_process_targets(tgt: Tensor, tgt_len, img_size):
     large_scale_mask = (scale <= 1).long()
     med_scale_mask = (scale <= 0).long()
     idx_obj = \
-        large_scale_mask * (img_size // strides_selection[2]) ** 2 * 3 + \
-        med_scale_mask * (img_size // strides_selection[1]) ** 2 * 3 + \
+        large_scale_mask * (img_size // strides_selection[2]) ** 2 * NUM_ANCHORS_PER_SCALE + \
+        med_scale_mask * (img_size // strides_selection[1]) ** 2 * NUM_ANCHORS_PER_SCALE + \
         n_grid ** 2 * idx_anchor_by_scale + n_grid * grid_y + grid_x
 
     # calculate t_x and t_y
     t_x = (tgt[..., 0] / stride.float() - grid_x.float()).clamp(EPSILON, 1 - EPSILON)
-    t_x = torch.log(t_x / (1. - t_x))   #inverse of sigmoid
+    t_x = torch.log(t_x / (1. - t_x))  # inverse of sigmoid
     t_y = (tgt[..., 1] / stride.float() - grid_y.float()).clamp(EPSILON, 1 - EPSILON)
-    t_y = torch.log(t_y / (1. - t_y))    # inverse of sigmoid
+    t_y = torch.log(t_y / (1. - t_y))  # inverse of sigmoid
 
     # calculate t_w and t_h
     w_anchor = wh_anchor[..., 0]
@@ -181,7 +182,7 @@ def pre_process_targets(tgt: Tensor, tgt_len, img_size):
 
     # aggregate processed targets and the corresponding prediction index from different batches to one dimension
     n_batch = tgt.size(0)
-    n_pred = sum([(img_size // s) ** 2 for s in strides_selection]) * 3
+    n_pred = sum((img_size // s) ** 2 for s in strides_selection) * NUM_ANCHORS_PER_SCALE
 
     idx_obj_1d = []
     tgt_t_flat = []
