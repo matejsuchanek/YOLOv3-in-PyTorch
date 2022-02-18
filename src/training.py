@@ -24,6 +24,8 @@
 # WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 # USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from typing import Tuple
+
 import torch
 import torch.nn.functional as F
 
@@ -32,9 +34,10 @@ from config import NOOBJ_COEFF, COORD_COEFF, IGNORE_THRESH, ANCHORS, NUM_ANCHORS
 Tensor = torch.Tensor
 
 
-def yolo_loss_fn(preds: Tensor, tgt: Tensor, tgt_len: Tensor, img_size: int, average=True):
+def yolo_loss_fn(result: Tuple[Tensor], tgt: Tensor, tgt_len: Tensor, img_size: int, average=True):
     """Calculate the loss function given the predictions, the targets, the length of each target and the image size.
     Args:
+        result: ...
         preds: (Tensor) the raw prediction tensor. Size is [B, N_PRED, NUM_ATTRIB],
                 where B is the batch size;
                 N_PRED is the total number of predictions, equivalent to N_GRID*N_GRID for each scale;
@@ -52,7 +55,8 @@ def yolo_loss_fn(preds: Tensor, tgt: Tensor, tgt_len: Tensor, img_size: int, ave
         the total loss
     """
     # generate the no-objectness mask. mask_noobj has size of [B, N_PRED]
-    mask_noobj = noobj_mask_fn(preds, tgt)
+    preds, bbox = result
+    mask_noobj = noobj_mask_fn(bbox, tgt)
     tgt_t_1d, idx_pred_obj = pre_process_targets(tgt, tgt_len, img_size)
     mask_noobj = noobj_mask_filter(mask_noobj, idx_pred_obj)
 

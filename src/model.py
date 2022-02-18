@@ -116,34 +116,34 @@ class YoloLayer(nn.Module):
         num_batch = x.size(0)
         num_grid = x.size(2)
 
-        if self.training:
-            output_raw = x.view(num_batch,
+        prediction_raw = x.view(num_batch,
                                 NUM_ANCHORS_PER_SCALE,
                                 NUM_ATTRIB,
                                 num_grid,
-                                num_grid).permute(0, 1, 3, 4, 2).contiguous().view(num_batch, -1, NUM_ATTRIB)
-            return output_raw
+                                num_grid).permute(0, 1, 3, 4, 2).contiguous()
+
+        # prediction_raw: num_batch, NUM_ANCHORS_PER_SCALE, num_grid, num_grid, NUM_ATTRIB
+
+        # Calculate offsets for each grid
+        grid_tensor = torch.arange(num_grid, dtype=torch.float, device=x.device).repeat(num_grid, 1)
+        grid_x = grid_tensor.view(1, 1, num_grid, num_grid)
+        grid_y = grid_tensor.t().view(1, 1, num_grid, num_grid)
+
+        anchors = self.anchors.to(x.device)
+        anchor_w = anchors[..., 0].view(1, -1, 1, 1)
+        anchor_h = anchors[..., 1].view(1, -1, 1, 1)
+
+        # Get outputs
+        x_center_pred = (torch.sigmoid(prediction_raw[..., 0]) + grid_x) * self.stride  # Center x
+        y_center_pred = (torch.sigmoid(prediction_raw[..., 1]) + grid_y) * self.stride  # Center y
+        w_pred = torch.exp(prediction_raw[..., 2]) * anchor_w  # Width
+        h_pred = torch.exp(prediction_raw[..., 3]) * anchor_h  # Height
+        bbox_pred = torch.stack((x_center_pred, y_center_pred, w_pred, h_pred), dim=4).view(num_batch, -1, 4)  #cxcywh
+
+        if self.training:
+            output_raw = prediction_raw.view(num_batch, -1, NUM_ATTRIB)
+            return output_raw, bbox_pred
         else:
-            prediction_raw = x.view(num_batch,
-                                    NUM_ANCHORS_PER_SCALE,
-                                    NUM_ATTRIB,
-                                    num_grid,
-                                    num_grid).permute(0, 1, 3, 4, 2).contiguous()
-
-            self.anchors = self.anchors.to(x.device).float()
-            # Calculate offsets for each grid
-            grid_tensor = torch.arange(num_grid, dtype=torch.float, device=x.device).repeat(num_grid, 1)
-            grid_x = grid_tensor.view([1, 1, num_grid, num_grid])
-            grid_y = grid_tensor.t().view([1, 1, num_grid, num_grid])
-            anchor_w = self.anchors[:, 0:1].view((1, -1, 1, 1))
-            anchor_h = self.anchors[:, 1:2].view((1, -1, 1, 1))
-
-            # Get outputs
-            x_center_pred = (torch.sigmoid(prediction_raw[..., 0]) + grid_x) * self.stride # Center x
-            y_center_pred = (torch.sigmoid(prediction_raw[..., 1]) + grid_y) * self.stride  # Center y
-            w_pred = torch.exp(prediction_raw[..., 2]) * anchor_w  # Width
-            h_pred = torch.exp(prediction_raw[..., 3]) * anchor_h  # Height
-            bbox_pred = torch.stack((x_center_pred, y_center_pred, w_pred, h_pred), dim=4).view((num_batch, -1, 4)) #cxcywh
             conf_pred = torch.sigmoid(prediction_raw[..., 4]).view(num_batch, -1, 1)  # Conf
             cls_pred = torch.sigmoid(prediction_raw[..., 5:]).view(num_batch, -1, NUM_CLASSES)  # Cls pred one-hot.
 
@@ -251,8 +251,13 @@ class YoloNetV3(nn.Module):
     def forward(self, x):
         tmp1, tmp2, tmp3 = self.darknet(x)
         out1, out2, out3 = self.yolo_tail(tmp1, tmp2, tmp3)
-        out = torch.cat((out1, out2, out3), 1)
-        logging.debug("The dimension of the output before nms is {}".format(out.size()))
+        if self.training:
+            out_raw = torch.cat((out1[0], out2[0], out3[0]), 1)
+            out_bbox = torch.cat((out1[1], out2[1], out3[1]), 1)
+            out = (out_raw, out_bbox)
+        else:
+            out = torch.cat((out1, out2, out3), 1)
+            logging.debug("The dimension of the output before nms is {}".format(out.size()))
         return out
 
     def yolo_last_layers(self):
